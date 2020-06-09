@@ -156,22 +156,30 @@ def summarize_fd_by_subject(df):
     )
 
 
-def calc_motion_deltas(mat_file):
+def calc_motion_deltas(mat_file, diff=True, normalize=False):
     """
     This function reproduces 99% of calculation in nipype.algorithms.confounds.FramewiseDisplacement
-    but leaves out the summation step.
+    but leaves out the summation step. It can also z-score.
     Output columns are: x, y, z, pitch, roll, yaw
     """
 
     from nipype.utils.misc import normalize_mc_params
+    from scipy.stats import zscore
 
     mat = np.loadtxt(mat_file)
     mpars = np.apply_along_axis(
         func1d=normalize_mc_params, axis=1, arr=mat, source="FSL"
     )
-    diff = mpars[:-1, :6] - mpars[1:, :6]
-    diff[:, 3:6] *= 50
-    return np.abs(diff), mat_file
+    if diff:
+        mpars = mpars[:-1, :6] - mpars[1:, :6]
+        mpars[:, 3:6] *= 50
+        mpars = np.abs(mpars)
+    else:
+        mpars[:, 3:6] *= 50
+    if normalize:
+        mpars = zscore(mpars)
+        
+    return mpars, mat_file
 
 
 @curry

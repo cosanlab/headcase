@@ -10,11 +10,27 @@ from pymer4.stats import perm_test, boot_func
 from pymer4.utils import _sig_stars
 from tqdm.auto import tqdm
 from itertools import combinations
-from pingouin import tost
 import matplotlib as mpl
 
 mpl.rcParams["font.family"] = "Avenir"
 sns.set_context("paper")
+
+
+def tost_upper(x, y, bound=1, paired=False, correction=False):
+    """Modified tost for just upper bound"""
+    from pingouin.parametric import ttest
+
+    x = np.asarray(x)
+    y = np.asarray(y)
+    assert isinstance(bound, (int, float)), "bound must be int or float."
+
+    df_b = ttest(x - bound, y, paired=paired, correction=correction, tail="less")
+    pval = df_b.at["T-test", "p-val"]
+    t = df_b.at["T-test", "T"]
+
+    # Create output dataframe
+    stats = {"bound": bound, "dof": df_b.at["T-test", "dof"], "t-stat": t, "pval": pval}
+    return pd.DataFrame.from_records(stats, index=["TOST"])
 
 
 def format_summary_file_for_comparisons(df, exclude=[]):
@@ -136,7 +152,7 @@ def compare_two_samples(
 
 def calc_results_table(df, excluded=False, n_perm=5000, seed=0, n_jobs=8):
     """
-    Compares all subsets of headcase comparisons across all conditions for a given dataframe and returns a dataframe of results. 
+    Compares all subsets of headcase comparisons across all conditions for a given dataframe and returns a dataframe of results.
     
     Uses:
     get_groups
@@ -317,7 +333,12 @@ def make_comparison_figure(
 
 
 def calc_tost_table(
-    formatted_comparisons, results_table, metrics, conditions, excluded=False
+    formatted_comparisons,
+    results_table,
+    metrics,
+    conditions,
+    excluded=False,
+    func=tost_upper,
 ):
     tost_results = pd.DataFrame()
     for metric in metrics:
@@ -336,8 +357,8 @@ def calc_tost_table(
                 if condition == "view"
                 else "sherlock_no_case__fnl_has_case"
             )
-            bound = 0.05 if condition == "view" else 0.15
-            tost_result = tost(x, y, correction=True, bound=bound)
+            bound = 0.05
+            tost_result = func(x, y, correction=True, bound=bound)
             mean_diffs = results_table.query(
                 "comparison == @comparison and condition == @condition and measure == @metric"
             ).reset_index(drop=True)[["mean_diff", "ci_lower", "ci_upper"]]
@@ -372,9 +393,8 @@ def make_tost_figure(
     conditions=["view", "recall"],
     condition_labels=["Viewing", "Talking"],
     xlims=[(-0.1, 0.1), (-0.25, 0.25)],
-    tost_bounds=[(-0.05, 0.05), (-0.15, 0.15)],
-    palette_one=sns.color_palette("Reds"),
-    palette_two=sns.color_palette("Blues"),
+    tost_bounds=[(-0.05, 0.05), (-0.05, 0.05)],
+    palette=None,
     markersize=10,
     linewidth=3,
     figsize=(8.6, 4.5),
@@ -382,28 +402,31 @@ def make_tost_figure(
 
     view_tost = (
         tost_results.query("condition == 'view'")
-        .sort_values(by="measure")
+        .sort_values(by="measure", ascending=False)
         .reset_index(drop=True)
     )
     recall_tost = (
         tost_results.query("condition == 'recall'")
-        .sort_values(by="measure")
+        .sort_values(by="measure", ascending=False)
         .reset_index(drop=True)
     )
+    if palette is None:
+        palette = [
+            sns.color_palette("Reds")[3],
+            sns.color_palette("Blues")[3],
+            sns.color_palette("Reds")[1],
+            sns.color_palette("Blues")[1],
+        ]
 
     f, axs = plt.subplots(1, 2, figsize=figsize)
 
     for i, row in view_tost.iterrows():
-        if "filter" in row["measure"]:
-            color = palette_one[i]
-        else:
-            color = palette_two[i]
         axs[0].plot(
             row["mean_diff"],
             0.1 + (0.1 * i),
             "o",
             markersize=10,
-            color=color,
+            color=palette[i],
             label=row["comparison"],
         )
         axs[0].hlines(
@@ -412,20 +435,16 @@ def make_tost_figure(
             xmax=row["ci_upper"],
             linestyle="-",
             linewidth=linewidth,
-            color=color,
+            color=palette[i],
         )
 
     for i, row in recall_tost.iterrows():
-        if "filter" in row["measure"]:
-            color = sns.color_palette("Reds")[i]
-        else:
-            color = sns.color_palette("Blues")[i]
         axs[1].plot(
             row["mean_diff"],
             0.1 + (0.1 * i),
             "o",
             markersize=10,
-            color=color,
+            color=palette[i],
             label=row["comparison"],
         )
         axs[1].hlines(
@@ -434,7 +453,7 @@ def make_tost_figure(
             xmax=row["ci_upper"],
             linestyle="-",
             linewidth=linewidth,
-            color=color,
+            color=palette[i],
         )
 
     for i, ax in enumerate(axs):
@@ -453,17 +472,19 @@ def make_tost_figure(
         ax.text(
             x=0.4, y=1.07, s=condition_labels[i], transform=ax.transAxes, fontsize=14
         )
+        ax.text(x=-.05, y=-0.1, s="Headcases worse", transform=ax.transAxes, fontsize=10)
+        ax.text(x=.7, y=-0.1, s="Headcases better", transform=ax.transAxes, fontsize=10)
 
     sns.despine(left=True)
+    handles, labels = plt.gca().get_legend_handles_labels()
+    handles = handles[::-1]
+    labels = ["FD Mean", "FD Mean (excluded)", "FD Median", "FD Median (excluded)"]
     f.legend(
-        labels=["FD Mean", "FD Mean (filtered)", "FD Median", "FD Median (filtered)"],
-        loc=(0.13, 0.87),
-        ncol=4,
-        prop={"size": 9},
+        handles=handles, labels=labels, loc=(0.13, 0.87), ncol=4, prop={"size": 9},
     )
     plt.suptitle(
         "Mean Difference\n(No headcase - With headcase)",
-        y=-0.04,
+        y=-0.08,
         x=0.52,
         fontsize=14,
         va="bottom",

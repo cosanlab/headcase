@@ -83,7 +83,7 @@ f.savefig(fig_dir / "fd_barplot_excluded.png", bbox_inches="tight", dpi=300)
 # %%
 ## 2b. Same as above but with filtered mean and median
 measure_order = ["fd_mean_filter", "fd_median_filter"]
-measure_labels = ["mean FD (mm)\n(filtered)", "median FD (mm)\n(filtered)"]
+measure_labels = ["mean FD (mm)\n(excluded)", "median FD (mm)\n(excluded)"]
 rows = 2
 figsize = (8.5, 6.6)
 view_range = np.arange(0, 0.4, 0.1)
@@ -167,8 +167,6 @@ from lib.n01 import make_tost_figure, calc_tost_table
 metrics = ["fd_mean", "fd_median", "fd_mean_filter", "fd_median_filter"]
 conditions = ["view", "recall"]
 condition_labels = ["Viewing", "Talking"]
-xlims = [(-0.1, 0.1), (-0.25, 0.25)]
-tost_bounds = [(-0.05, 0.05), (-0.15, 0.15)]
 
 if not tost_comparisons.exists():
     formatted = format_summary_file_for_comparisons(fd_summary)
@@ -188,3 +186,6 @@ else:
     tost_results_excluded = pd.read_csv(tost_comparisons_excluded_subs)
 f, ax = make_tost_figure(tost_results_excluded)
 f.savefig(fig_dir / "tost_results_excluded.png", bbox_inches="tight", dpi=300)
+
+
+# %%
